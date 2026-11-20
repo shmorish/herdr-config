@@ -5,7 +5,7 @@ Herdr.app（`~/.config/herdr-app`）の自作の設定・mod・レイアウト�
 | パス | 中身 |
 |---|---|
 | `settings.json`, `keys.json` | アプリの設定とキー割り当て |
-| `layouts/work.json` | 普段使うレイアウト（Ocean 配色のガラス風） |
+| `layouts/work.json` | 普段使うレイアウト（Ocean 配色のガラス風、Office はナチュラルな部屋） |
 | `mods/` | 自作 mod（projects / work-agents / work-tabs / board / claude-limits） |
 | `themes/` | 取り込んだテーマ（rose-pine、MIT） |
 
