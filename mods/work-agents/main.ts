@@ -147,10 +147,14 @@ export default class Agents extends View {
     if (this.unread.size !== size) localStorage.setItem("unread", JSON.stringify([...this.unread]));
   }
 
-  // 引数で渡すので、名前に " などが入っても AppleScript として解釈されない
+  // terminal-notifier で出し、押したら Herdr を前に出す（osascript の通知は押すとスクリプトエディタが開く）。
+  // terminal-notifier が無い・通知が許可されていないときは osascript で出す。
+  // osascript には引数で渡すので、名前に " などが入っても AppleScript として解釈されない
   alert(name: string, s: string) {
     const title = s === "blocked" ? "Claude が入力待ち" : "Claude が完了";
-    exec("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, name]).catch(() => {});
+    const fallback = () => exec("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, name]).catch(() => {});
+    exec("terminal-notifier", ["-title", title, "-message", name, "-activate", "dev.herdr.app"])
+      .then((r) => { if (r.code !== 0) fallback(); }, fallback);
   }
 
   // Keep offline pins until their terminal returns, and keep each pending until
