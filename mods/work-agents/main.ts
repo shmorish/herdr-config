@@ -2,10 +2,30 @@
 // A viewed done agent stays in Done until left.
 
 import { View, div, image, svg } from "gpui-kit";
+import type { AsyncContext, Color, Element } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, exec, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import type { AgentInfo, PaneInfo, Program, TabInfo } from "herdr";
 
-function find(node, id) {
+// theme() gives every token as a "#rrggbb" string.
+type Theme = Record<string, Color>;
+// What terminals() gives (`hc ls --json`), the fields read here.
+interface Term {
+  address: string;
+  parent?: string | null;
+  state: string;
+  status?: string | null;
+  name?: string | null;
+  template?: string | null;
+  program?: Program;
+  labels?: Record<string, string>;
+}
+interface LayoutNode { id?: string; size?: { px?: number }; children?: LayoutNode[] }
+interface Sub { t: Term; lines: string[] }
+interface Group { id: string; label: string; status: string | null; members: AgentInfo[] }
+const alpha = (c: Color, a: string): Color => `${c}${a}`;
+
+function find(node: LayoutNode | null | undefined, id: string): LayoutNode | null {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
     const found = find(child, id);
@@ -15,21 +35,21 @@ function find(node, id) {
 }
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
-const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+const narrow = () => (find(layout() as LayoutNode, "sidebar")?.size?.px ?? Infinity) < 160;
 
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
 function toggleSidebar() {
-  const width = find(layout(), "sidebar")?.size?.px;
+  const width = find(layout() as LayoutNode, "sidebar")?.size?.px;
   if (!narrow()) setShared("sidebar.width", width);
   // Mods edited before the rail went by width still read the flag.
   setShared("sidebar.collapsed", !narrow());
   run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
 }
 
-const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
+const clean = (s: string | null | undefined) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 
-function leadPanes(all) {
-  const leads = new Map();
+function leadPanes(all: PaneInfo[]) {
+  const leads = new Map<string, PaneInfo>();
   for (const p of all) {
     if (!p.terminal) continue;
     const current = leads.get(p.tab);
@@ -39,16 +59,16 @@ function leadPanes(all) {
   return leads;
 }
 
-function title(tab, l) {
+function title(tab: TabInfo, l: PaneInfo | undefined) {
   const prog = l?.program?.name;
   const live = clean(l?.title);
   const telling = live && live !== prog && !/^[~/]|^[A-Za-z]:\\/.test(live) && !live.includes("@") && live.toLowerCase() !== l?.program?.key;
   return (tab.name === prog || !tab.named) && telling ? live : tab.name;
 }
-const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
+const RANK: Record<string, number> = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
 // blocked. It's never done: it reports to its parent, and the parent's done is the news.
-const kidStatus = (k, listed) => {
+const kidStatus = (k: Term, listed: Map<string, string>) => {
   const own = listed.get(k.address); // 自分のペインを持つ子（herdr-lead の作業役）はその状態のまま
   if (own) return own;
   const s = k.status;
@@ -59,10 +79,10 @@ const SORTS = [
   { id: "grouped", label: "Grouped by space", icon: "layers" },
 ];
 const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
-const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
-const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
+const SECTION: Record<number, string> = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
+const SECTION_STATUS: Record<number, string> = { 4: "blocked", 3: "done", 2: "working" };
 
-function duration(ms) {
+function duration(ms: number) {
   const m = Math.floor(ms / 60000);
   if (m < 1) return "<1m";
   if (m < 60) return `${m}m`;
@@ -71,13 +91,24 @@ function duration(ms) {
 }
 
 // The agent's icon from the app's program table: a one-color glyph or a picture.
-function icon(p, size, color) {
+function icon(p: Program | undefined, size: number, color: Color) {
   if (!p?.icon) return null;
   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
 }
 
 export default class Agents extends View {
-  init(_props, cx) {
+  folded!: Set<string>;
+  changed!: Record<string, { s: string; at: number }>;
+  pendingPins!: string[];
+  migratingPins!: Set<string>;
+  unread!: Set<string>;
+  raw?: Record<string, string>;
+  held?: { address: string; rank: number } | null;
+  hovered?: string | null;
+  listed!: Map<string, string>;
+  panes!: Map<string, string>;
+
+  init(_props: unknown, cx: AsyncContext) {
     if (props()?.sortMenu) return;
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
@@ -92,7 +123,7 @@ export default class Agents extends View {
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
   // finished agent turns done into idle, and looking isn't the agent doing anything.
-  track(list, now) {
+  track(list: AgentInfo[], now: number) {
     let dirty = false;
     for (const a of list) {
       const s = a.status === "done" ? "idle" : a.status;
@@ -109,35 +140,35 @@ export default class Agents extends View {
 
   // 状態が done / blocked に変わったら: 見ていない done は未読にし、Herdr が裏にいれば macOS の通知を出す。
   // 最初の 1 回は今の状態を覚えるだけ（起動直後に全員分の通知が出ないように）。
-  watch(all, names) {
+  watch(all: Term[], names: Map<string, string>) {
     const cur = focused();
-    const seen = new Set([cur?.agent, cur?.terminal].filter(Boolean));
+    const seen = new Set([cur?.agent, cur?.terminal].filter((x): x is string => Boolean(x)));
     const before = this.raw;
-    this.raw = {};
+    const raw: Record<string, string> = (this.raw = {});
     const size = this.unread.size;
     for (const k of all) {
       if (k.state !== "live" || !k.status) continue;
       const s = k.status === "error" ? "blocked" : k.status;
-      this.raw[k.address] = s;
+      raw[k.address] = s;
       if (!before || before[k.address] === s) continue;
       if (s === "done" && !seen.has(k.address)) this.unread.add(k.address);
       if (s === "working") this.unread.delete(k.address);
       if ((s === "done" || s === "blocked") && !window()?.active) this.alert(names.get(k.address) || k.name || k.program?.name || k.address, s);
     }
     for (const a of seen) this.unread.delete(a);
-    for (const a of this.unread) if (!(a in this.raw)) this.unread.delete(a);
+    for (const a of this.unread) if (!(a in raw)) this.unread.delete(a);
     if (this.unread.size !== size) localStorage.setItem("unread", JSON.stringify([...this.unread]));
   }
 
   // 引数で渡すので、名前に " などが入っても AppleScript として解釈されない
-  alert(name, s) {
+  alert(name: string, s: string) {
     const title = s === "blocked" ? "Claude が入力待ち" : "Claude が完了";
     exec("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, name]).catch(() => {});
   }
 
   // Keep offline pins until their terminal returns, and keep each pending until
   // core echoes the label so a failed write doesn't erase the old pin.
-  migratePins(all) {
+  migratePins(all: Term[]) {
     const listed = new Map(all.filter((t) => t.state === "live").map((t) => [t.address, t]));
     const pending = this.pendingPins.filter((address) => {
       const terminal = listed.get(address);
@@ -155,25 +186,25 @@ export default class Agents extends View {
     else localStorage.removeItem("pins");
   }
 
-  since(a) {
+  since(a: AgentInfo) {
     return this.changed[a.address]?.at ?? 0;
   }
 
   // Looking at a done agent makes it idle; it stays with Done until you leave
   // it rather than drop away under you. Any other change moves it at once.
-  hold(list) {
+  hold(list: AgentInfo[]) {
     const cur = list.find((a) => a.focused);
     const same = cur && cur.address === this.held?.address;
     // Arriving, or any change but done turning idle, sets what it was.
     if (!same || cur.status !== "idle") this.held = cur ? { address: cur.address, rank: RANK[cur.status] ?? 0 } : null;
   }
 
-  rank(a) {
-    const sawDone = a.address === this.held?.address && this.held.rank === RANK.done && a.status === "idle";
+  rank(a: AgentInfo) {
+    const sawDone = a.address === this.held?.address && this.held?.rank === RANK.done && a.status === "idle";
     return sawDone ? RANK.done : RANK[a.status] ?? 0;
   }
 
-  sortMenu(t) {
+  sortMenu(t: Theme) {
     const on = sortOf().id;
     return v_flex()
       .w_full()
@@ -199,12 +230,12 @@ export default class Agents extends View {
         .when(s.id === on, (el) => el.child(svg("mods/workspace-chrome/check.svg").size(14).flex_none().text_color(t.foreground)))));
   }
 
-  peek(addr) {
+  peek(addr: string) {
     run("terminal.peek", { terminal: addr });
   }
 
   // Live sub-agents of `addr`, depth first, each with the tree lines in front of it.
-  tree(all, addr, lead = []) {
+  tree(all: Term[], addr: string, lead: string[] = []): Sub[] {
     const kids = all.filter((k) => k.parent === addr && k.state === "live");
     return kids.flatMap((k, i) => {
       const last = i === kids.length - 1;
@@ -215,7 +246,7 @@ export default class Agents extends View {
     });
   }
 
-  subRow(t, s, shown, compact) {
+  subRow(t: Theme, s: Sub, shown: string | null | undefined, compact: boolean) {
     const k = s.t;
     const st = kidStatus(k, this.listed);
     const pic = icon(k.program, 14, t.foreground);
@@ -236,35 +267,35 @@ export default class Agents extends View {
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
-      .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
+      .when(Boolean(pic), el => el.child(div().mr(8).child(pic!)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
       .when(this.unread.has(k.address), (el) => el.child(div().size(6).mr(6).flex_none().rounded(3).bg(t.blocked)))
       .child(this.status(t, { status: st }, compact));
   }
 
   // compact: a ! for blocked where a header already says "Needs you".
-  status(t, a, compact = false) {
-    const color = t[a.status] ?? t.dim;
+  status(t: Theme, a: { status: string | null | undefined }, compact = false) {
+    const color = t[a.status ?? ""] ?? t.dim;
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
-    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(alpha(t.blocked, "26")).text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
+    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(alpha(t.blocked, "26")).text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
     // Idle: a ring; done: a dot.
     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
-    return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
+    return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : alpha(t.dim, "00"));
   }
 
-  render(cx) {
-    const t = theme();
+  render() {
+    const t = theme() as Theme;
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();
     let list = agents();
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.panes = new Map(list.map((a) => [a.address, a.pane]));
-    const all = terminals();
+    const all = terminals() as Term[];
     this.watch(all, new Map(list.map((a) => [a.address, a.space_name])));
     // 生きている親がいる子は、自分のペインがあっても親の下にだけ出す（サイドバーの space と同じ入れ子）
-    const live = new Set(all.filter((k) => k.state === "live").map((k) => k.address));
+    const live = new Set<string | null | undefined>(all.filter((k) => k.state === "live").map((k) => k.address));
     list = list.filter((a) => !live.has(all.find((k) => k.address === a.address)?.parent));
     this.migratePins(all);
     const shown = focused()?.agent;
@@ -272,15 +303,15 @@ export default class Agents extends View {
     this.track(list, now);
     this.hold(list);
     const byPriority = sort.id === "priority";
-    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
-    const rankOf = (a) => urgency.get(a.address);
+    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed) ?? ""] ?? 0))]));
+    const rankOf = (a: AgentInfo) => urgency.get(a.address) ?? 0;
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     const pinned = list.filter((a) => a.pinned);
     const rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
     setAgentOrder(list.map((a) => a.address));
 
-    const withKids = (a, i) => {
+    const withKids = (a: AgentInfo, i: number): Element[] => {
       const subs = collapsed ? [] : this.tree(all, a.address);
       const r = row(a, i, subs);
       if (this.folded.has(a.address)) return [r];
@@ -288,9 +319,9 @@ export default class Agents extends View {
     };
 
     // The fold chevron; folded, the count too, colored by the most urgent one.
-    const fold = (a, subs) => {
+    const fold = (a: AgentInfo, subs: Sub[]) => {
       const sts = subs.map((s) => kidStatus(s.t, this.listed));
-      const top = sts.reduce((m, s) => ((RANK[s] ?? 0) > (RANK[m] ?? 0) ? s : m), null);
+      const top = sts.reduce<string | null | undefined>((m, s) => ((RANK[s ?? ""] ?? 0) > (RANK[m ?? ""] ?? 0) ? s : m), null);
       const open = !this.folded.has(a.address);
       return div()
         .id(`fold-${a.address}`)
@@ -301,7 +332,7 @@ export default class Agents extends View {
         .items_center()
         .rounded(4)
         .text_size(11)
-        .text_color(open ? t.dim : (t[top] ?? t.dim))
+        .text_color(open ? t.dim : (t[top ?? ""] ?? t.dim))
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => {
@@ -320,15 +351,15 @@ export default class Agents extends View {
     const leads = leadPanes(panes());
     const tabLabels = new Map(spaces().flatMap(s => s.tabs).map(tab => [tab.id, title(tab, leads.get(tab.id))]));
     const labels = new Map(list.map(a => [a.address, tabLabels.get(a.tab) ?? (a.title || a.program?.name || "")]));
-    const label = (a) => labels.get(a.address);
+    const label = (a: AgentInfo) => labels.get(a.address) ?? "";
     const detail = new Map(list.map(a => [a.address, /^\d+$/.test(label(a)) ? null : label(a)]));
-    const seen = {};
+    const seen: Record<string, number> = {};
     for (const a of list) { const k = `${a.space_name}\u0000${detail.get(a.address) ?? ""}`; seen[k] = (seen[k] ?? 0) + 1; }
     for (const a of list) {
       if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
     }
 
-    const row = (a, i, subs = []) => {
+    const row = (a: AgentInfo, i: number, subs: Sub[] = []) => {
       const pic = icon(a.program, 16, t.foreground);
       const more = detail.get(a.address);
       // An agent on another machine (`vps/t7`) says which.
@@ -392,12 +423,12 @@ export default class Agents extends View {
             cx.stop_propagation();
             this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
             cx.notify();
-          })).child(pic)))
+          })).child(pic!)))
         .child(h_flex().flex_1().min_w(0).gap(5).items_center()
           .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
           .when(this.unread.has(a.address), el => el.child(div().size(6).flex_none().rounded(3).bg(t.blocked)))
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
-        .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
+        .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine!)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
         .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
@@ -406,18 +437,19 @@ export default class Agents extends View {
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
     // space are next to each other in agents(), so neighbours make a group.
-    const groups = pinned.length ? [{ id: "pinned", label: "Pinned", status: null, members: pinned }] : [];
+    const groups: Group[] = pinned.length ? [{ id: "pinned", label: "Pinned", status: null, members: pinned }] : [];
     for (const a of rest) {
       const r = rankOf(a) || RANK.idle;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
-      if (groups.at(-1)?.id === id) groups.at(-1).members.push(a);
+      const last = groups.at(-1);
+      if (last?.id === id) last.members.push(a);
       else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
     // A group's header; it folds the group. Folded, it says how many and the most urgent state.
-    const header = (g) => {
+    const header = (g: Group) => {
       const open = !this.folded.has(g.id);
-      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
+      const top = g.members.reduce<string | null>((m, a) => ((RANK[a.status] ?? 0) > (RANK[m ?? ""] ?? 0) ? a.status : m), null);
       return h_flex()
         .id(g.id)
         .px(8)
@@ -434,7 +466,7 @@ export default class Agents extends View {
           open ? this.folded.add(g.id) : this.folded.delete(g.id);
           cx.notify();
         })
-        .child(div().truncate().text_color(t[g.status] ?? t.dim).child(g.label))
+        .child(div().truncate().text_color(t[g.status ?? ""] ?? t.dim).child(g.label))
         .when(byPriority || !open, (el) => el.child(div().text_color(t.dim).child(String(g.members.length))))
         .child(div().flex_1())
         .when(!open, (el) => el

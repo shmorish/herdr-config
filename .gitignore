@@ -1,2 +1,5 @@
-# Herdr が起動ごとに書き直す型定義
-*.d.ts
+# Herdr が mod のフォルダに書く型定義（types/ に同梱したものを使う）
+mods/**/*.d.ts
+mods/**/jsconfig.json
+# make build の出力
+/dist/
