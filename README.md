@@ -25,4 +25,4 @@ CI でも型チェックと変換を確かめる。
 [dotfiles](https://github.com/shmorish/dotfiles) の Home Manager がコミット固定で取ってきて、`build.sh` で変換したものを `~/.config/herdr-app` に実ファイルとしてコピーする。
 変えたらここにコミット・push し、dotfiles の `herdrConfig` の rev と hash を上げて `make switch`。
 
-コミュニティの mod（Moe Office の fork、Herdr Glass）は dotfiles 側で取ってくる。
+コミュニティの mod（Office: Moe Office の fork、Herdr Glass）は dotfiles 側で取ってくる。

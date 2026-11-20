@@ -115,7 +115,7 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .child(panelButton("board", "Board", "mods/workspace-chrome/layers.svg"))
-      // 上のオフィス（moe-office）の出し入れ
+      // 上のオフィス（office mod）の出し入れ
       .when(Boolean(office), el => el.child(h_flex().id("office-toggle").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
         .text_size(12).bg(office!.hidden ? t.chrome : t.selected).text_color(office!.hidden ? t.muted : t.foreground)
         .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)

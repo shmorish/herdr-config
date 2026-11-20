@@ -102,7 +102,7 @@
           "id": "office",
           "type": "block",
           "content": {
-            "mod": "moe-office"
+            "mod": "office"
           },
           "size": {
             "px": 220
