@@ -4,7 +4,8 @@
 import { View, div, type AsyncContext, type Color } from "gpui-kit";
 import { h_flex, v_flex, HoverCard } from "gpui-base";
 import * as fs from "fs/promises";
-import { theme, home } from "herdr";
+import { colors } from "../../lib/theme";
+import { home } from "herdr";
 
 // statusline.sh が書く JSON（Claude Code の rate_limits）
 interface RateWindow { used_percentage?: number; resets_at?: number }
@@ -35,7 +36,7 @@ export default class ClaudeLimits extends View {
   }
 
   render() {
-    const t = theme() as Record<string, Color>; // テーマの色は #rrggbb
+    const t = colors();
     const now = Date.now() / 1000;
     const rl = this.data?.rate_limits ?? {};
     const wins = WINDOWS.filter(([k]) => rl[k]).map(([k, short, long, len]) => {
@@ -44,7 +45,7 @@ export default class ClaudeLimits extends View {
       const over = w.resets_at && w.resets_at < now;
       const pct = over ? 0 : Math.round(w.used_percentage ?? 0);
       // 枠のうち経過した割合。使用率がこれを上回っていれば、このままだと枠を使い切る
-      const elapsed = w.resets_at && !over ? Math.min(100, Math.max(0, 100 - ((w.resets_at! - now) / len) * 100)) : null;
+      const elapsed = w.resets_at && !over ? Math.min(100, Math.max(0, 100 - ((w.resets_at - now) / len) * 100)) : null;
       const color = pct >= 90 ? t.ansi1 : pct >= 70 ? t.ansi3 : elapsed != null && pct > elapsed + 10 ? t.ansi3 : t.ansi2;
       return { k, short, long, w, pct, elapsed, color, over };
     });

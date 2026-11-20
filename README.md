@@ -10,6 +10,7 @@
 | `keys.json` | キー割り当て |
 | `layouts/work.json` | 普段使うレイアウト。紺のガラス風で、上にオフィス、下にステータスバー |
 | `mods/` | 自作 mod 5 つ（TypeScript） |
+| `lib/` | 複数の mod で使う処理（git の呼び出し、projects.json の読み込み、テーマの色、レイアウトの探索） |
 | `themes/` | 取り込んだテーマ（rose-pine、MIT） |
 | `types/` | Herdr の型定義の写し（Apache-2.0） |
 
@@ -33,7 +34,7 @@
 
 ## 開発
 
-mod は `mods/<mod>/main.ts` に TypeScript で書く。`strict` で null チェックも有効。Herdr が読むのは `main.js` だけなので、`build.sh` が esbuild で変換する。
+mod は `mods/<mod>/main.ts` に TypeScript で書く。`strict` で null チェックも有効。Herdr が読むのは `main.js` だけで、mod のフォルダの外も読めないので、`build.sh` が esbuild で mod ごとに 1 つの `main.js` にまとめる（`lib/` はそこに取り込まれる）。
 
 ```sh
 make check   # 型チェック

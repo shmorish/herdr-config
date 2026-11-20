@@ -1,27 +1,10 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
-import type { Color, Context, Element } from "gpui-kit";
+import { spaces, panes, run, openOverlay, window, shared, settings } from "herdr";
+import type { Context, Element } from "gpui-kit";
 import type { SpaceInfo, TabInfo } from "herdr";
-
-// The parts of a layout node (layouts/<name>.json) this mod reads.
-interface LayoutNode {
-  id?: string;
-  hidden?: boolean;
-  active?: string;
-  size?: { px?: number };
-  traffic_lights?: [number, number];
-  children?: LayoutNode[];
-}
-
-function find(node: LayoutNode | null | undefined, id: string): LayoutNode | null {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) {
-    const found = find(child, id);
-    if (found) return found;
-  }
-  return null;
-}
+import { colors } from "../../lib/theme";
+import { find, root as layoutRoot, type LayoutNode } from "../../lib/layout";
 
 export default class Tabs extends View {
   declare pressed: number | null;
@@ -63,7 +46,7 @@ export default class Tabs extends View {
   }
 
   render() {
-    const t = theme() as Record<string, Color>;
+    const t = colors();
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e: unknown, cx: Context) => cx.stop_propagation();
@@ -88,7 +71,7 @@ export default class Tabs extends View {
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status!])))
         .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(12))));
     };
-    const root = layout() as LayoutNode | null, sidebar = find(root, "sidebar"), w = window();
+    const root = layoutRoot(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
     const lightsPadding = w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && root?.traffic_lights
       ? Math.max(10, (root.traffic_lights[0] + 64) / (settings().zoom as number) - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))

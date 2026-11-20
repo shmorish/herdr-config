@@ -10,5 +10,5 @@
     "useDefineForClassFields": false,
     "paths": { "herdr": ["./types/herdr.d.ts"] }
   },
-  "include": ["mods/**/*.ts", "types/*.d.ts"]
+  "include": ["mods/**/*.ts", "lib/**/*.ts", "types/*.d.ts"]
 }
