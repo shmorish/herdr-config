@@ -5,24 +5,12 @@
 
 import { View, div, svg, type AsyncContext, type Color, type Context, type Element } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, home, type SpaceInfo, type PaneInfo } from "herdr";
-import * as fs from "fs/promises";
-// --- projects と board で同じもの。Herdr は mod のフォルダ外の import を許さないので、それぞれに置く ---
-// git を、index の lock も fsmonitor も触らずに呼ぶ（watch を起こさない・他の git とぶつからない）。`on`: 別マシンの名前
-const git = (cwd: string, args: string[], on?: string | null) => exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], { cwd, on });
-// ~/.config/herdr-app/projects.json の案件フォルダ（~ を展開した絶対パス）。無い・壊れているときは []
-async function loadProjects(): Promise<string[]> {
-  try {
-    return (JSON.parse(await fs.readFile(`${home()}/.config/herdr-app/projects.json`, "utf8")) as string[]).map((d) => d.replace(/^~/, home()));
-  } catch {
-    return [];
-  }
-}
-// --- ここまで ---
+import { spaces, machines, panes, run, openOverlay, exec, hc, shared, setShared, watchFolder, window, type SpaceInfo, type PaneInfo } from "herdr";
+import { git } from "../../lib/git";
+import { loadProjects } from "../../lib/projects";
+import { colors, type Theme } from "../../lib/theme";
+import { narrow } from "../../lib/layout";
 
-type Theme = Record<string, Color>;
-// A layout node, as much of it as this mod reads.
-interface LayoutNode { id?: string; size?: { px?: number }; children?: LayoutNode[] }
 // One place's git (see check()); null in `git`: not a repo.
 interface GitInfo { name: string; branch: string | null; ahead: number; behind: number; repo: string; linked: boolean }
 // A row of the list: a space, its position, its git, its tree mark, and its 案件.
@@ -32,17 +20,6 @@ interface Machine { name: string; state?: string; why?: string; via?: string; ta
 // A machine being connected again (kept in localStorage across restarts).
 interface Repair { machine: Machine; removed: boolean; busy?: boolean; error?: string | null }
 
-function find(node: LayoutNode | null | undefined, id: string): LayoutNode | null {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) {
-    const found = find(child, id);
-    if (found) return found;
-  }
-  return null;
-}
-
-// The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
-const narrow = () => (find(layout() as LayoutNode, "sidebar")?.size?.px ?? Infinity) < 160;
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
@@ -62,11 +39,11 @@ const FALLBACK = 60000;
 const MARK: Record<string, Color> = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 
 // A space speaks up only when something in it needs you.
-export function glyph(status: string | null) {
+function glyph(status: string | null) {
   return status === "blocked" || status === "done" ? "●" : "·";
 }
 
-export function tone(t: Theme, status: string | null) {
+function tone(t: Theme, status: string | null) {
   return t[status as string] ?? t.unknown;
 }
 
@@ -445,7 +422,7 @@ export default class Spaces extends View {
             .child(div().id(`machine-connect-${m}`).text_color(repair?.error ? t.blocked : t.muted)
               .hover(s => s.text_color(t.foreground))
               .tooltip(repair?.error || "This machine was rebuilt or replaced. Click to connect to the new one.")
-              .on_click((_e, cx) => { cx.stop_propagation(); this.reconnect(machine!, cx); })
+              .on_click((_e, cx) => { cx.stop_propagation(); this.reconnect(machine, cx); })
               .child(repair?.busy ? "Connecting…" : "Connect"))))
           .when(connected, el => el.child(div().id(`machine-add-${m ?? "local"}`).flex_none().px(4).rounded(4).hover(s => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); run("space.new", { machine: m ?? "" }); }).child("+")))
@@ -555,7 +532,7 @@ export default class Spaces extends View {
   }
 
   render() {
-    const t = theme() as Theme;
+    const t = colors();
     const collapsed = narrow();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
     const sp = spaces();

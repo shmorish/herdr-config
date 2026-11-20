@@ -2,24 +2,13 @@
 // 各行: ブランチ、未コミット数、ahead/behind、そこで動く Claude の状態、PR。
 // props: { folder } 案件フォルダ。無ければ表示中の space の場所から決め、space を移ると追従する。
 
-import { View, div, type Color, type Context } from "gpui-kit";
+import { View, div, type Context } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { exec, panes, props, run, theme, home, focused, type PaneInfo, type Status } from "herdr";
-import * as fs from "fs/promises";
-// --- projects と board で同じもの。Herdr は mod のフォルダ外の import を許さないので、それぞれに置く ---
-// git を、index の lock も fsmonitor も触らずに呼ぶ（watch を起こさない・他の git とぶつからない）。`on`: 別マシンの名前
-const git = (cwd: string, args: string[], on?: string | null) => exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], { cwd, on });
-// ~/.config/herdr-app/projects.json の案件フォルダ（~ を展開した絶対パス）。無い・壊れているときは []
-async function loadProjects(): Promise<string[]> {
-  try {
-    return (JSON.parse(await fs.readFile(`${home()}/.config/herdr-app/projects.json`, "utf8")) as string[]).map((d) => d.replace(/^~/, home()));
-  } catch {
-    return [];
-  }
-}
-// --- ここまで ---
+import { exec, panes, props, run, home, focused, type PaneInfo, type Status } from "herdr";
+import { git } from "../../lib/git";
+import { loadProjects } from "../../lib/projects";
+import { colors, type Theme } from "../../lib/theme";
 
-type Theme = Record<string, Color>;
 interface GitStatus { branch: string | null; ahead: number; behind: number; dirty: number }
 interface Checkout extends GitStatus { path: string; main: boolean; merged: boolean }
 interface Repo { name: string; path: string; checkouts: Checkout[] }
@@ -219,7 +208,7 @@ export default class Board extends View {
       : h_flex().flex_none().gap(12).text_size(11.5).child(gitEl.w(90)).child(div().w(110).child(agent)).child(prEl.w(80)))
       .when(removable, (el) => el.child(rm));
     return h_flex().id(`co-${c.path}`).px(10).py(5).gap(8).items_start().rounded(6)
-      .when(Boolean(target), (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)).on_click(() => run("pane.focus", { pane: target!.pane })))
+      .when(Boolean(target), (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)).on_click(() => run("pane.focus", { pane: target.pane })))
       .child(div().w(14).flex_none().text_color(t.dim).child(c.main ? "" : "└"))
       .child(narrow
         ? v_flex().flex_1().min_w(0).gap(2).child(name).child(meta)
@@ -227,7 +216,7 @@ export default class Board extends View {
   }
 
   render() {
-    const t = theme() as Theme;
+    const t = colors();
     const dir = this.folder();
     const ps = panes();
     const head = h_flex().h(40).px(14).gap(10).items_center().border_b(1).border_color(t.border)

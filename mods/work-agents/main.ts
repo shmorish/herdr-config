@@ -4,11 +4,11 @@
 import { View, div, image, svg } from "gpui-kit";
 import type { AsyncContext, Color, Element } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, exec, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, exec, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window } from "herdr";
 import type { AgentInfo, PaneInfo, Program, TabInfo } from "herdr";
+import { colors, type Theme } from "../../lib/theme";
+import { find, narrow, root } from "../../lib/layout";
 
-// theme() gives every token as a "#rrggbb" string.
-type Theme = Record<string, Color>;
 // What terminals() gives (`hc ls --json`), the fields read here.
 interface Term {
   address: string;
@@ -20,26 +20,13 @@ interface Term {
   program?: Program;
   labels?: Record<string, string>;
 }
-interface LayoutNode { id?: string; size?: { px?: number }; children?: LayoutNode[] }
 interface Sub { t: Term; lines: string[] }
 interface Group { id: string; label: string; status: string | null; members: AgentInfo[] }
 const alpha = (c: Color, a: string): Color => `${c}${a}`;
 
-function find(node: LayoutNode | null | undefined, id: string): LayoutNode | null {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) {
-    const found = find(child, id);
-    if (found) return found;
-  }
-  return null;
-}
-
-// The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
-const narrow = () => (find(layout() as LayoutNode, "sidebar")?.size?.px ?? Infinity) < 160;
-
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
 function toggleSidebar() {
-  const width = find(layout() as LayoutNode, "sidebar")?.size?.px;
+  const width = find(root(), "sidebar")?.size?.px;
   if (!narrow()) setShared("sidebar.width", width);
   // Mods edited before the rail went by width still read the flag.
   setShared("sidebar.collapsed", !narrow());
@@ -285,7 +272,7 @@ export default class Agents extends View {
   }
 
   render() {
-    const t = theme() as Theme;
+    const t = colors();
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();

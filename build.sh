@@ -1,6 +1,7 @@
 #!/bin/sh
-# mods/*/main.ts を main.js に変換し、mod のフォルダごと $1 に置く（Herdr が読むのは main.js だけ）。
-# import はそのまま残す（gpui-kit や herdr は Herdr が実行時に渡す）。
+# mods/*/main.ts を esbuild でまとめて main.js にし、mod のフォルダごと $1 に置く（Herdr が読むのは main.js だけ）。
+# lib/ などの相対 import は main.js に取り込み、gpui-kit や herdr のような名前だけの import は
+# Herdr が実行時に渡すのでそのまま残す（--packages=external）。
 set -eu
 out=$1
 mkdir -p "$out"
@@ -11,5 +12,5 @@ for d in mods/*/; do
   for f in "$d"*; do
     case "$f" in *.ts) ;; *) cp "$f" "$out/$name/" ;; esac
   done
-  esbuild "$d/main.ts" --outfile="$out/$name/main.js" --format=esm --target=es2022 --log-level=warning
+  esbuild "$d/main.ts" --bundle --packages=external --format=esm --target=es2022 --charset=utf8 --outfile="$out/$name/main.js" --log-level=warning
 done
