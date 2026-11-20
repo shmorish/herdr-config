@@ -4,7 +4,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import type { AsyncContext, Color, Element } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, exec, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, exec, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, home } from "herdr";
 import type { AgentInfo, PaneInfo, Program, TabInfo } from "herdr";
 import { colors, type Theme } from "../../lib/theme";
 import { find, narrow, root } from "../../lib/layout";
@@ -153,7 +153,8 @@ export default class Agents extends View {
   alert(name: string, s: string) {
     const title = s === "blocked" ? "Claude が入力待ち" : "Claude が完了";
     const fallback = () => exec("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, name]).catch(() => {});
-    exec("terminal-notifier", ["-title", title, "-message", name, "-activate", "dev.herdr.app"])
+    // Herdr がコマンドを探す PATH に ~/.nix-profile/bin が入らないことがあるので、Home Manager が入れた場所を直接指す
+    exec(`${home()}/.nix-profile/bin/terminal-notifier`, ["-title", title, "-message", name, "-activate", "dev.herdr.app"])
       .then((r) => { if (r.code !== 0) fallback(); }, fallback);
   }
 
