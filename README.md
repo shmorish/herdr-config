@@ -8,7 +8,7 @@
 |---|---|
 | `settings.json` | フォント、ダーク表示、テーマ（ダークは rose-pine） |
 | `keys.json` | キー割り当て |
-| `layouts/work.json` | 普段使うレイアウト。紺のガラス風で、上にオフィス、下にステータスバー |
+| `layouts/work.json` | 普段使うレイアウト。紺のグラデーションにガラス風のカードで、上にオフィス、下にステータスバー |
 | `mods/` | 自作 mod 5 つ（TypeScript） |
 | `lib/` | 複数の mod で使う処理（git の呼び出し、projects.json の読み込み、テーマの色、レイアウトの探索） |
 | `themes/` | 取り込んだテーマ（rose-pine、MIT） |
@@ -55,4 +55,4 @@ PR と main への push で、CI が型チェックと変換を確かめる。
 
 Herdr の画面で変えた設定は、次の `make switch` で上書きされる。残したいものは、ここにコミットする。
 
-オフィス（[herdr-office](https://github.com/shmorish/herdr-office)、Moe Office の fork）と Herdr Glass は、この repo ではなく dotfiles 側で取ってくる。
+オフィス（[herdr-office](https://github.com/shmorish/herdr-office)、Moe Office の fork）は、この repo ではなく dotfiles 側で取ってくる。

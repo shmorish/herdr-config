@@ -240,8 +240,11 @@
     }
   ],
   "background": {
-    "image": "mods/herdr-glass-bg/presets/ocean.jpg",
-    "fit": "cover"
+    "gradient": [
+      "#477d95",
+      "#101b26"
+    ],
+    "angle": 180
   },
   "terminal_padding": [
     14,
