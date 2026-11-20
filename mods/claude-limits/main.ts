@@ -70,7 +70,9 @@ export default class ClaudeLimits extends View {
           .child(div().text_size(20).font_semibold().text_color(x.color).child(`${x.pct}%`)))
         .child(bar(x.pct, 272, 8, x.color, x.elapsed))
         .child(h_flex().text_size(11).text_color(t.dim)
-          .child(div().flex_1().child(x.over ? "リセット済み（次の応答で更新）" : `あと ${span(x.w.resets_at! - now)}（${when(x.w.resets_at!)}）`))
+          .child(div().flex_1().child(x.over ? "リセット済み（次の応答で更新）"
+            : x.w.resets_at ? `あと ${span(x.w.resets_at - now)}（${when(x.w.resets_at)}）`
+            : "リセット時刻は不明"))
           .when(x.elapsed != null, (el) => el.child(div().text_color(x.pct > x.elapsed! + 10 ? t.ansi3 : t.dim)
             .child(x.pct > x.elapsed! + 10 ? "ペース速め" : `経過 ${Math.round(x.elapsed!)}%`)))))
         : [div().text_color(t.dim).child("まだデータがありません。Claude Code が一度応答すると表示されます。")])
